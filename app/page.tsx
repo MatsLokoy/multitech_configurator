@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import ConnectForm from "./components/ConnectForm";
+import ConnectFlow from "./components/ConnectFlow";
 import Dashboard from "./components/Dashboard";
 
 type SessionState =
@@ -51,7 +51,7 @@ export default function Home() {
 
         {session.status === "loading" && <p>Laster...</p>}
 
-        {session.status === "disconnected" && <ConnectForm onConnected={refreshSession} />}
+        {session.status === "disconnected" && <ConnectFlow onConnected={refreshSession} />}
 
         {session.status === "connected" && (
           <Dashboard

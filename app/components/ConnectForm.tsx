@@ -2,8 +2,16 @@
 
 import { useState } from "react";
 
-export default function ConnectForm({ onConnected }: { onConnected: () => void }) {
-  const [baseUrl, setBaseUrl] = useState("192.168.2.1");
+export default function ConnectForm({
+  initialBaseUrl,
+  onBack,
+  onConnected,
+}: {
+  initialBaseUrl: string;
+  onBack: () => void;
+  onConnected: () => void;
+}) {
+  const [baseUrl, setBaseUrl] = useState(initialBaseUrl);
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -63,13 +71,18 @@ export default function ConnectForm({ onConnected }: { onConnected: () => void }
         />
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <button
-        type="submit"
-        disabled={loading}
-        className="rounded bg-foreground text-background px-4 py-2 font-medium disabled:opacity-50"
-      >
-        {loading ? "Kobler til..." : "Koble til"}
-      </button>
+      <div className="flex items-center gap-4">
+        <button
+          type="submit"
+          disabled={loading}
+          className="rounded bg-foreground text-background px-4 py-2 font-medium disabled:opacity-50"
+        >
+          {loading ? "Kobler til..." : "Koble til"}
+        </button>
+        <button type="button" onClick={onBack} className="text-sm underline">
+          Endre IP-adresse
+        </button>
+      </div>
     </form>
   );
 }

@@ -46,7 +46,20 @@ function describeNetworkError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-async function deviceFetch(url: string, init: RequestInit = {}) {
+export interface DeviceApiResponse {
+  code?: number;
+  status?: string;
+  error?: string;
+  result?: unknown;
+}
+
+/**
+ * Sends the request and returns the device's parsed JSON response as-is,
+ * whatever its status. Only network failures and non-JSON responses throw.
+ * Use this when a "fail" status is a meaningful outcome to interpret
+ * (e.g. commissioning dialogs), not just an error to surface.
+ */
+async function rawDeviceFetch(url: string, init: RequestInit = {}): Promise<DeviceApiResponse> {
   let res: Response;
   try {
     res = (await undiciFetch(url, {
@@ -57,18 +70,19 @@ async function deviceFetch(url: string, init: RequestInit = {}) {
     throw new MultitechApiError(`Fikk ikke kontakt med enheten (${describeNetworkError(cause)})`);
   }
 
-  let body: unknown = null;
   try {
-    body = await res.json();
+    return (await res.json()) as DeviceApiResponse;
   } catch {
     throw new MultitechApiError(`Enheten svarte med ugyldig JSON (HTTP ${res.status})`, res.status);
   }
+}
 
-  const parsed = body as { code?: number; status?: string; error?: string; result?: unknown };
-  if (!res.ok || parsed?.status === "fail") {
-    throw new MultitechApiError(parsed?.error ?? `Forespørsel feilet (HTTP ${res.status})`, parsed?.code ?? res.status);
+/** Like rawDeviceFetch, but throws MultitechApiError when the device reports "fail". */
+async function deviceFetch(url: string, init: RequestInit = {}): Promise<DeviceApiResponse> {
+  const parsed = await rawDeviceFetch(url, init);
+  if (parsed?.status === "fail") {
+    throw new MultitechApiError(parsed?.error ?? "Forespørsel feilet", parsed?.code);
   }
-
   return parsed;
 }
 
@@ -82,6 +96,44 @@ export async function login(baseUrlInput: string, username: string, password: st
     throw new MultitechApiError("Enheten godtok forespørselen, men returnerte ikke noe token");
   }
   return { baseUrl, token };
+}
+
+export interface CommissioningStatus {
+  /** true while the device still needs its initial admin user; false once already set up. */
+  active: boolean;
+  raw: DeviceApiResponse;
+}
+
+/**
+ * Checks whether a freshly booted / factory-reset device is still waiting
+ * for its initial admin user to be created. No session token is needed -
+ * this endpoint is reachable before any account exists.
+ */
+export async function commissioningStatus(baseUrlInput: string): Promise<CommissioningStatus> {
+  const baseUrl = normalizeBaseUrl(baseUrlInput);
+  const raw = await rawDeviceFetch(`${baseUrl}/commissioning`, { method: "GET" });
+  return { active: raw.status === "success", raw };
+}
+
+/**
+ * Performs one step of the commissioning "ask-answer-sequence" (aas) dialog
+ * used to set the initial admin username/password, per MultiTech's
+ * "Using curl for Commissioning" guide:
+ *   1. {username, aasID: "", aasAnswer: ""}        -> returns an aasID
+ *   2. {username, aasID: <from step 1>, aasAnswer: <new password>}
+ *   3. repeat step 2 (same password) using the aasID from its response, to confirm
+ * Each response's aasID should be carried into the next call.
+ */
+export async function commissioningStep(
+  baseUrlInput: string,
+  payload: { username: string; aasID: string; aasAnswer: string }
+): Promise<DeviceApiResponse> {
+  const baseUrl = normalizeBaseUrl(baseUrlInput);
+  return rawDeviceFetch(`${baseUrl}/commissioning`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function logout(session: DeviceSession): Promise<void> {
